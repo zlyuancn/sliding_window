@@ -117,6 +117,10 @@ func (s *SlidingWindow) Wait(ctx context.Context, dataSn int64) (err error) {
 		}
 	}
 
+	if s.GetProgress() >= s.waitProgressOk {
+		return nil
+	}
+
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
