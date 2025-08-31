@@ -9,55 +9,55 @@
 
 ```go
 func main() {
-data := make([]int, 1000) // 待处理数据
-maxDataSn := int64(999)   // 最大数据sn
+	data := make([]int, 1000) // 待处理数据
+	maxDataSn := int64(999)   // 最大数据sn
 
-windowSize := 100         // 滑动窗口大小
-startDataSn := int64(300) // 从这个数据sn开始处理
+	windowSize := 100         // 滑动窗口大小
+	startDataSn := int64(300) // 从这个数据sn开始处理
 
-// 创建一个滑动窗口
-sw := sliding_window.NewSlidingWindow(windowSize, startDataSn)
-defer sw.Stop()
+	// 创建一个滑动窗口
+	sw := sliding_window.NewSlidingWindow(windowSize, startDataSn)
+	defer sw.Stop()
 
-for {
-sn, err := sw.Next(context.Background())
-if err != nil {
-log.Fatalf("next err: %v", err)
-}
+	for {
+		sn, err := sw.Next(context.Background())
+		if err != nil {
+			log.Fatalf("next err: %v", err)
+		}
 
-// 模拟异步提交处理
-go func() {
-// 模拟io延迟
-time.Sleep(time.Millisecond * time.Duration(rand.Int31n(50)))
-// 数据处理
-data[sn] = 1
+		// 模拟异步提交处理
+		go func() {
+			// 模拟io延迟
+			time.Sleep(time.Millisecond * time.Duration(rand.Int31n(50)))
+			// 数据处理
+			data[sn] = 1
 
-// 告知处理完成
-sw.Ack(sn)
-}()
+			// 告知处理完成
+			sw.Ack(sn)
+		}()
 
-// 所有数据都提交处理了
-if sn == maxDataSn {
-log.Printf("submit ok")
-break
-}
-}
+		// 所有数据都提交处理了
+		if sn == maxDataSn {
+			log.Printf("submit ok")
+			break
+		}
+	}
 
-log.Printf("wait process")
+	log.Printf("wait process")
 
-// 等待完成
-err := sw.Wait(context.Background(), maxDataSn)
-if err != nil {
-log.Fatalf("wait err: %v", err)
-}
+	// 等待完成
+	err := sw.Wait(context.Background(), maxDataSn)
+	if err != nil {
+		log.Fatalf("wait err: %v", err)
+	}
 
-// 检查数据
-for i := startDataSn; i <= maxDataSn; i++ {
-if data[i] != 1 {
-log.Fatalf("data[%d] != 1. %+v", i, data)
-}
-}
-log.Printf("process ok")
+	// 检查数据
+	for i := startDataSn; i <= maxDataSn; i++ {
+		if data[i] != 1 {
+			log.Fatalf("data[%d] != 1. %+v", i, data)
+		}
+	}
+	log.Printf("process ok")
 }
 ```
 
@@ -77,11 +77,11 @@ log.Printf("process ok")
 
 ```go
 type SlidingWindow struct {
-data        []bool        // 环形数据, 表示每条数据是否已处理
-dIndex      int           // 环形数据起始位置索引
-startDataSn int64         // 起始位置映射表示的数据sn
+	data        []bool        // 环形数据, 表示每条数据是否已处理
+	dIndex      int           // 环形数据起始位置索引
+	startDataSn int64         // 起始位置映射表示的数据sn
 
-// ... 其它字段
+	// ... 其它字段
 }
 ```
 
@@ -95,13 +95,13 @@ startDataSn int64         // 起始位置映射表示的数据sn
 
 ```go
 type SlidingWindow struct {
-data        []bool        // 环形数据, 表示每条数据是否已处理
-dIndex      int           // 环形数据起始位置索引
-startDataSn int64         // 起始位置映射表示的数据sn
+	data        []bool        // 环形数据, 表示每条数据是否已处理
+	dIndex      int           // 环形数据起始位置索引
+	startDataSn int64         // 起始位置映射表示的数据sn
 
-ackCh        chan int64 // ack数据通道, 用于并发转串行
-
-// ... 其它字段
+	ackCh        chan int64 // ack数据通道, 用于并发转串行
+	
+	// ... 其它字段
 }
 ```
 
@@ -115,9 +115,9 @@ ackCh        chan int64 // ack数据通道, 用于并发转串行
 
 ```go
 type SlidingWindow struct {
-space       chan struct{} // 滑动窗口可用窗口数量
+	space       chan struct{} // 滑动窗口可用窗口数量
 
-// ... 其它字段
+	// ... 其它字段
 }
 ```
 
@@ -127,8 +127,8 @@ space       chan struct{} // 滑动窗口可用窗口数量
 
 ```go
 type SlidingWindow struct {
-waitProgressOk int64 // 等待达到指定进度
-waitCh         chan struct{}
+	waitProgressOk int64 // 等待达到指定进度
+	waitCh         chan struct{}
 }
 ```
 
