@@ -18,9 +18,9 @@ type SlidingWindow struct {
 	ackCh        chan int64 // ack数据通道, 用于并发转串行
 	submitDataSn int64      // 已完成提交的数据sn
 
-	waitOkDataSn    int64 // 等待全部完成的数据sn
-	waitOkCh        chan struct{}
-	isCloseWaitOkCh int32 // 防止重复关闭
+	waitProgressOk int64 // 等待达到指定进度
+	waitCh         chan struct{}
+	isCloseWaitCh  int32 // 防止重复关闭
 
 	stopCh        chan struct{} // 停止通道
 	isCloseStopCh int32         // 防止重复关闭
@@ -44,8 +44,8 @@ func NewSlidingWindow(size int, startDataSn int64) *SlidingWindow {
 		ackCh:        make(chan int64),
 		submitDataSn: startDataSn - 1,
 
-		waitOkDataSn: -1,
-		waitOkCh:     make(chan struct{}),
+		waitProgressOk: -1,
+		waitCh:         make(chan struct{}),
 
 		stopCh: make(chan struct{}),
 	}
@@ -67,7 +67,7 @@ func (s *SlidingWindow) Next(ctx context.Context) (int64, error) {
 	return sn, nil
 }
 
-// 数据完成确认(数据sn) return (获取已处理完成的数据sn, 表示这个数据sn以及其之前的数据都已经处理完毕)
+// 数据完成确认(数据sn)
 func (s *SlidingWindow) Ack(dataSn int64) {
 	if dataSn < 0 {
 		panic("dataSn must >= 0")
@@ -97,7 +97,7 @@ func (s *SlidingWindow) ackLoop() {
 			// 只有第一个数据完成才会开始滑动窗口
 			if dataSn == ssn {
 				ssn = s.slide()
-				s.checkOkDataSn(ssn)
+				s.checkWaitProgress(ssn - 1)
 			}
 		case <-s.stopCh:
 			return
@@ -105,15 +105,15 @@ func (s *SlidingWindow) ackLoop() {
 	}
 }
 
-// 等待这个数据sn及之前的数据全部处理完毕
-func (s *SlidingWindow) Wait(ctx context.Context, maxDataSn int64) (err error) {
-	if maxDataSn < 0 {
-		return errors.New("maxDataSn must >= 0")
+// 等待达到指定进度, 传入一个数据sn, 表示 dataSn 及之前的数据都已处理完成
+func (s *SlidingWindow) Wait(ctx context.Context, dataSn int64) (err error) {
+	if dataSn < 0 {
+		return errors.New("dataSn must >= 0")
 	}
 
-	if !atomic.CompareAndSwapInt64(&s.waitOkDataSn, -1, maxDataSn) { // 首次使用
-		if !atomic.CompareAndSwapInt64(&s.waitOkDataSn, maxDataSn, maxDataSn) { // 多次使用
-			return errors.New("Repeat the Wait operation, but with different maxDataSn data.")
+	if !atomic.CompareAndSwapInt64(&s.waitProgressOk, -1, dataSn) { // 首次使用
+		if !atomic.CompareAndSwapInt64(&s.waitProgressOk, dataSn, dataSn) { // 多次使用
+			return errors.New("Repeat the Wait operation, but with different dataSn data.")
 		}
 	}
 
@@ -122,7 +122,7 @@ func (s *SlidingWindow) Wait(ctx context.Context, maxDataSn int64) (err error) {
 		return ctx.Err()
 	case <-s.stopCh:
 		return ErrIsStop
-	case <-s.waitOkCh:
+	case <-s.waitCh:
 	}
 
 	return nil
@@ -164,21 +164,21 @@ func (s *SlidingWindow) slide() int64 {
 	return ssn
 }
 
-// 获取已处理完成的数据sn, 表示这个数据sn以及其之前的数据都已经处理完毕
-func (s *SlidingWindow) GetOkDataSn() int64 {
+// 获取进度, 返回一个数据sn, 表示这个数据sn以及其之前的数据都已经处理完成
+func (s *SlidingWindow) GetProgress() int64 {
 	return atomic.LoadInt64(&s.startDataSn) - 1
 }
 
-func (s *SlidingWindow) checkOkDataSn(startDataSn int64) {
-	okSn := startDataSn - 1
-	waitOkDataSn := atomic.LoadInt64(&s.waitOkDataSn)
-	if waitOkDataSn != -1 && okSn >= waitOkDataSn {
+// 检查等待进度
+func (s *SlidingWindow) checkWaitProgress(progress int64) {
+	waitProgress := atomic.LoadInt64(&s.waitProgressOk)
+	if waitProgress != -1 && progress >= waitProgress {
 		s.closeWaitOkCh()
 	}
 }
 
 func (s *SlidingWindow) closeWaitOkCh() {
-	if atomic.AddInt32(&s.isCloseWaitOkCh, 1) == 1 {
-		close(s.waitOkCh)
+	if atomic.AddInt32(&s.isCloseWaitCh, 1) == 1 {
+		close(s.waitCh)
 	}
 }

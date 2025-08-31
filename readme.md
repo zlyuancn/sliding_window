@@ -9,55 +9,55 @@
 
 ```go
 func main() {
-	data := make([]int, 1000) // 待处理数据
-	maxDataSn := int64(999)   // 最大数据sn
+data := make([]int, 1000) // 待处理数据
+maxDataSn := int64(999)   // 最大数据sn
 
-	windowSize := 100         // 滑动窗口大小
-	startDataSn := int64(300) // 从这个数据sn开始处理
+windowSize := 100         // 滑动窗口大小
+startDataSn := int64(300) // 从这个数据sn开始处理
 
-	// 创建一个滑动窗口
-	sw := sliding_window.NewSlidingWindow(windowSize, startDataSn)
-	defer sw.Stop()
+// 创建一个滑动窗口
+sw := sliding_window.NewSlidingWindow(windowSize, startDataSn)
+defer sw.Stop()
 
-	for {
-		sn, err := sw.Next(context.Background())
-		if err != nil {
-			log.Fatalf("next err: %v", err)
-		}
+for {
+sn, err := sw.Next(context.Background())
+if err != nil {
+log.Fatalf("next err: %v", err)
+}
 
-		// 模拟异步提交处理
-		go func() {
-			// 模拟io延迟
-			time.Sleep(time.Millisecond * time.Duration(rand.Int31n(50)))
-			// 数据处理
-			data[sn] = 1
+// 模拟异步提交处理
+go func() {
+// 模拟io延迟
+time.Sleep(time.Millisecond * time.Duration(rand.Int31n(50)))
+// 数据处理
+data[sn] = 1
 
-			// 告知处理完成
-			sw.Ack(sn)
-		}()
+// 告知处理完成
+sw.Ack(sn)
+}()
 
-		// 所有数据都提交处理了
-		if sn == maxDataSn {
-			log.Printf("submit ok")
-			break
-		}
-	}
+// 所有数据都提交处理了
+if sn == maxDataSn {
+log.Printf("submit ok")
+break
+}
+}
 
-	log.Printf("wait process")
+log.Printf("wait process")
 
-	// 等待完成
-	err := sw.Wait(context.Background(), maxDataSn)
-	if err != nil {
-		log.Fatalf("wait err: %v", err)
-	}
+// 等待完成
+err := sw.Wait(context.Background(), maxDataSn)
+if err != nil {
+log.Fatalf("wait err: %v", err)
+}
 
-	// 检查数据
-	for i := startDataSn; i <= maxDataSn; i++ {
-		if data[i] != 1 {
-			log.Fatalf("data[%d] != 1. %+v", i, data)
-		}
-	}
-	log.Printf("process ok")
+// 检查数据
+for i := startDataSn; i <= maxDataSn; i++ {
+if data[i] != 1 {
+log.Fatalf("data[%d] != 1. %+v", i, data)
+}
+}
+log.Printf("process ok")
 }
 ```
 
@@ -77,11 +77,11 @@ func main() {
 
 ```go
 type SlidingWindow struct {
-	data        []bool        // 环形数据, 表示每条数据是否已处理
-	dIndex      int           // 环形数据起始位置索引
-	startDataSn int64         // 起始位置映射表示的数据sn
+data        []bool        // 环形数据, 表示每条数据是否已处理
+dIndex      int           // 环形数据起始位置索引
+startDataSn int64         // 起始位置映射表示的数据sn
 
-	// ... 其它字段
+// ... 其它字段
 }
 ```
 
@@ -95,13 +95,13 @@ type SlidingWindow struct {
 
 ```go
 type SlidingWindow struct {
-	data        []bool        // 环形数据, 表示每条数据是否已处理
-	dIndex      int           // 环形数据起始位置索引
-	startDataSn int64         // 起始位置映射表示的数据sn
+data        []bool        // 环形数据, 表示每条数据是否已处理
+dIndex      int           // 环形数据起始位置索引
+startDataSn int64         // 起始位置映射表示的数据sn
 
-	ackCh        chan int64 // ack数据通道, 用于并发转串行
-	
-	// ... 其它字段
+ackCh        chan int64 // ack数据通道, 用于并发转串行
+
+// ... 其它字段
 }
 ```
 
@@ -115,35 +115,74 @@ type SlidingWindow struct {
 
 ```go
 type SlidingWindow struct {
-	space       chan struct{} // 滑动窗口可用窗口数量
+space       chan struct{} // 滑动窗口可用窗口数量
 
-	// ... 其它字段
+// ... 其它字段
 }
 ```
 
 每次使用者需要调用 `Next` 获取下一个应该处理的数据编号, 此时滑动窗口会向 `space` 写入数据, 表示占用了一个窗格. 当 `ack` 确认数据已处理时会从 `space` 取出数据以释放窗格占用
 
-## wait 如何实现等待指定的数据编号及其之前的编号完成
+## wait 如何实现等待指定进度完成
 
 ```go
 type SlidingWindow struct {
-	waitOkDataSn    int64 // 等待全部完成的数据sn
-	waitOkCh        chan struct{}
+waitProgressOk int64 // 等待达到指定进度
+waitCh         chan struct{}
 }
 ```
 
-使用者调用 `Wait` 时将要等待的数据编号记录到 `waitOkDataSn`, 然后使用 `waitOkCh` 获取数据, 此时由于 `waitOkCh` 没有数据会阻塞调用者.
-当 `Ack` 确认数据时, 如果该数据为滑动窗口内的第一条, 则滑动窗口开始向右移动. 由于滑动窗口之前的数据都是已处理完成的, 这里只需要检查滑动窗口之前的最大数据是大于等于 `waitOkDataSn` 则调用 `close(waitOkCh)` 关闭通道. 此时 `Wait` 的调用者阻塞被解除.
+使用者调用 `Wait` 时将要等待的数据编号记录到 `waitProgressOk`, 然后使用 `waitCh` 通道获取数据, 此时由于 `waitCh` 通道没有数据会阻塞调用者.
+当 `Ack` 确认数据时, 如果该数据为滑动窗口内的第一条, 则滑动窗口开始向右移动. 由于滑动窗口之前的数据都是已处理完成的, 这里只需要检查滑动窗口之前的最大数据是大于等于 `waitProgressOk` 则表示进度已完成.
+调用 `close(waitCh)` 关闭通道, 此时 `Wait` 的调用者阻塞被解除.
 
 ---
 
 # 注意
 
-## 滑动窗口的大小应该比最大并发线程数高
+## 滑动窗口的大小应该为最大并发线程数的 2 倍
 
 在滑动窗口内, 并非每次数据处理完成都是滑动窗口内的第一条数据, 应该调整滑动窗口的大小以提供更多的窗格, 以在第一条数据未处理完毕时, 其它数据处理完成后释放的线程能立即开始处理后面的数据, 而不是等着窗格移动.
 
-如果每个数据的处理时间相差不多, 一般滑动窗口的大小应该为并发线程数的 1.5 ~ 2 倍能保证性能的同时最大利用空间, 降低程序终止后下次重启后需要重新处理的数据量.
+如果每个数据的处理时间相差不多, 一般滑动窗口的大小应该为并发线程数的 2 倍能保证性能的同时最大利用空间, 降低程序终止后下次重启后需要重新处理的数据量.
+
+性能测试程序 `BenchmarkMultithreading` 的结果如下, 可以看到当滑动窗口的大小是线程数的 2 倍时速率得到大幅提升且容量增长最少.
+
+| 线程数    | 滑动窗口容量倍数 | 速率 (op/s) | 相对基准速率倍数 | 每倍数空间效率 (%) | 每倍数空间效率变化 |
+| --------- | ---------------- | ----------- | ---------------- | ------------------ | ------------------ |
+| **10**    | 1.0x             | 271         | 1.00             | 100.00             | 基准值             |
+|           | 1.3x             | 326         | 1.20             | 92.59              | ↓ 7.41%            |
+|           | 1.5x             | 373         | 1.38             | 91.91              | ↓ 8.09%            |
+|           | 1.8x             | 393         | 1.45             | 80.73              | ↓ 19.27%           |
+|           | 2.0x             | 433         | 1.60             | 79.92              | ↓ 20.08%           |
+|           | 3.0x             | 408         | 1.51             | 50.22              | ↓ 49.78%           |
+|           | 5.0x             | 411         | 1.52             | 30.33              | ↓ 69.67%           |
+|           | 10.0x            | 439         | 1.62             | 16.20              | ↓ 83.80%           |
+| **100**   | 1.0x             | 2,222       | 1.00             | 100.00             | 基准值             |
+|           | 1.3x             | 2,856       | 1.29             | 98.84              | ↓ 1.16%            |
+|           | 1.5x             | 3,279       | 1.48             | 98.37              | ↓ 1.63%            |
+|           | 1.8x             | 3,853       | 1.73             | 96.31              | ↓ 3.69%            |
+|           | 2.0x             | 4,065       | 1.83             | 91.43              | ↓ 8.57%            |
+|           | 3.0x             | 4,033       | 1.82             | 60.48              | ↓ 39.52%           |
+|           | 5.0x             | 4,076       | 1.84             | 36.68              | ↓ 63.32%           |
+|           | 10.0x            | 4,059       | 1.83             | 18.26              | ↓ 81.74%           |
+| **1000**  | 1.0x             | 21,033      | 1.00             | 100.00             | 基准值             |
+|           | 1.3x             | 27,109      | 1.29             | 99.13              | ↓ 0.87%            |
+|           | 1.5x             | 31,351      | 1.49             | 99.36              | ↓ 0.64%            |
+|           | 1.8x             | 37,401      | 1.78             | 98.79              | ↓ 1.21%            |
+|           | 2.0x             | 40,556      | 1.93             | 96.40              | ↓ 3.60%            |
+|           | 3.0x             | 40,957      | 1.95             | 64.91              | ↓ 35.09%           |
+|           | 5.0x             | 40,866      | 1.94             | 38.85              | ↓ 61.15%           |
+|           | 10.0x            | 40,835      | 1.94             | 19.41              | ↓ 80.59%           |
+| **10000** | 1.0x             | 203,129     | 1.00             | 100.00             | 基准值             |
+|           | 1.3x             | 264,480     | 1.30             | 100.16             | ↑ 0.16%            |
+|           | 1.5x             | 304,879     | 1.50             | 100.06             | ↑ 0.06%            |
+|           | 1.8x             | 362,319     | 1.78             | 99.09              | ↓ 0.91%            |
+|           | 2.0x             | 394,941     | 1.94             | 97.22              | ↓ 2.78%            |
+|           | 3.0x             | 397,614     | 1.96             | 65.25              | ↓ 34.75%           |
+|           | 5.0x             | 398,247     | 1.96             | 39.21              | ↓ 60.79%           |
+|           | 10.0x            | 399,042     | 1.96             | 19.64              | ↓ 80.36%           |
+
 
 ## 数据处理幂等性需要使用者实现
 
@@ -194,7 +233,7 @@ type SlidingWindow struct {
 
 可以考虑间隔同步进度而不是试试同步进度. 这样可以进一步降低进度同步消耗io, 即使同步失败, 只有节点本身异常导致进度丢失才会真的丢失最新进度.
 
-缺点. 
+缺点.
 
 一批次中的数据不一定是同时完成的, 比如业务具备100条的并行处理速度, 当其中50条完成了. 需要等待另外50条也完成才会开始下一批次的处理. 浪费至少一半的节点资源.
 
