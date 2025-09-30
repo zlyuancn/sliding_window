@@ -1,4 +1,4 @@
-module sliding_window
+module github.com/zlyuancn/sliding_window
 
 go 1.23.10
 
